@@ -486,11 +486,6 @@ allaic
 ```
 
 
-```{r}
-summary(mmr_unstr)
-```
-
-
 ### GEE 
 
 ```{r}
