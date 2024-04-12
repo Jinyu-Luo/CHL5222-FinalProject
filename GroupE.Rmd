@@ -2,7 +2,9 @@
 title: "EDA"
 author: "Jinyu Luo"
 date: "2024-04-11"
-output: pdf_document
+output: 
+  pdf_document
+  word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -167,7 +169,7 @@ mmr_gee <- geeglm(mmr ~ per_capita + n_school + type,
                     data = mmr_samples, 
                     id = stateID, 
                     corstr = "exchangeable")
-summarise(mmr_gee)
+summary(mmr_gee)
 ```
 
 
@@ -179,5 +181,5 @@ overall_gee <- geeglm(mmr ~ per_capita + n_school + type,
                     data = overall_samples, 
                     id = stateID, 
                     corstr = "ar1")
-summarise(overall_gee)
+summary(overall_gee)
 ```
