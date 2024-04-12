@@ -103,7 +103,7 @@ data.frame(
 
 ```{r}
 results_df <- data.frame(
-  Term = c("Exchangeable", "AR1", "Independence"),
+  Structure = c("Exchangeable", "AR1", "Independence"),
   QIC_MMR = c(3007.5, 3015.7, 3015.8, 3027.8, 3046.3, 3046.6), 
   Delta_MMR = c(0.00, 8.25, 8.26,0.00, 18.54, 18.86), 
   Weight_MMR = c(0.969, 0.016, 0.016, 1, 0, 0),
@@ -111,12 +111,14 @@ results_df <- data.frame(
   Delta_Overall = c(0.00, 77.92, 77.94,0.00, 0.05, 3.34),
   Weight_Overall = c(1, 0, 0, 0.462, 0.451, 0.087)
 )
+
 # Create the table with kable and kableExtra
-kable(results_df, booktabs = TRUE, longtable = TRUE) %>%
+kable(results_df, booktabs = TRUE, longtable = TRUE,
+      col.names = c("Structure", rep(c("QIC", "Delta", "Weight"),2))) %>%
   kable_styling(font_size = 4.7, latex_options = "striped", position = "center") %>%
   column_spec(1, bold = TRUE) %>%
-  add_header_above(c("Parameter Estimates for Model with Outcome MMR" = 4, 
-                     "Parameter Estimates for Model with Outcome Overall"=3))%>%
+  add_header_above(c(' '=1, "Parameter Estimates for Model with Outcome MMR" = 3, 
+                     "Parameter Estimates for Model with Outcome Overall" = 3))%>%
   pack_rows("Unadjusted", 1, 3) %>%
   pack_rows("Adjusted", 4, 6)
 ```
