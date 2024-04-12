@@ -1,19 +1,14 @@
 ---
-title: "EDA"
+title: "Untitled"
 author: "Jinyu Luo"
-date: "2024-04-11"
-output: 
-  pdf_document
-  word_document
+date: "2024-04-12"
+output: word_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r, eval=FALSE}
 library(tidyverse)
 library(kableExtra)
-```
-
-```{r Data Cleaning}
+library(geepack)
 # States info that were collected in 2017-18 
 state2017 <- c("Colorado", "Connecticut", "Minnesota", "Montana", 
                "New Jersey", "New York", "North Dakota", 
@@ -80,14 +75,11 @@ MMR <- MMR %>% left_join(data.frame(state = unique(MMR$state), stateID = 1:nStat
 
 overall <- data %>% filter(!is.na(overall)) 
 nStates <- n_distinct(overall$state)
-overall <- overall %>% left_join(data.frame(state = unique(MMR$state), stateID = 1:nStates))
-```
+overall <- overall %>% left_join(data.frame(state = unique(MMR$state), 
+                                            stateID = 1:nStates))
 
-## Stratified Sampling
-
-### MMR 
-
-```{r}
+# =============== Stratified Sampling ==================== # 
+# MMR
 # Step 1: Calculate weights for each state based on the number of schools
 state_weights <- mmr_dat %>%
   count(state) %>%
@@ -103,15 +95,6 @@ state_weights <- state_weights %>%
 
 set.seed(123)
 
-# mmr_samples <- mmr_dat %>%
-#   group_by(state) %>%
-#   sample_n(N, replace = FALSE) %>%
-#   mutate(schoolID = row_number()) %>%
-#   relocate(schoolID, .after = stateID) %>%
-#   ungroup() %>%
-#   arrange(stateID)
-
-
 mmr_samples <- NULL
 for (i in 1:nrow(state_weights)) {
   state <- state_weights[i, ]$state
@@ -126,10 +109,8 @@ mmr_samples <- mmr_samples %>% group_by(state) %>%
   relocate(schoolID, .after = stateID) %>%
   ungroup() %>%
   arrange(stateID)
-```
 
-```{r}
-# Stratified Sampling 
+# Overall Vaccination Rate
 # Step 1: Calculate weights for each state based on the number of schools
 state_weights <- overall_dat %>%
   count(state) %>%
@@ -158,28 +139,113 @@ overall_samples <- overall_samples %>% group_by(state) %>%
   relocate(schoolID, .after = stateID) %>% 
   ungroup() %>% 
   arrange(stateID)
-```
 
+# ===================== GEE ========================== # 
+# 1. MMR with Unadjusted 
+# GEE with Exchangeable Structure
+mmr_ex <- geeglm(mmr ~ per_capita, family = gaussian, 
+                  data = mmr_samples, id = stateID, 
+                  corstr = "exchangeable")
 
-# Best GEE for MMR 
+# GEE with AR1 Structure
+mmr_ar1 <- geeglm(mmr ~ per_capita, family = gaussian, 
+                  data = mmr_samples, id = stateID, 
+                  corstr = "ar1")
 
-```{r}
-mmr_gee <- geeglm(mmr ~ per_capita + n_school + type, 
+# GEE with Independent Structure
+mmr_ind <- geeglm(mmr ~ per_capita, family = gaussian, 
+                  data = mmr_samples, id = stateID, 
+                  corstr = "independence")
+
+# Model comparison 
+anova(mmr_ex, mmr_ar1)
+anova(mmr_ex, mmr_ind)
+anova(mmr_ind, mmr_ar1)
+
+# QIC Measures of Fit 
+MuMIn::model.sel(mmr_ex, mmr_ar1, mmr_ind, rank="QIC")
+
+# 2. MMR with adjusted 
+# Adjusted GEE with exchangeable 
+mmr_adj_ex <- geeglm(mmr ~ per_capita + n_school + type, 
                     family = gaussian, 
                     data = mmr_samples, 
                     id = stateID, 
                     corstr = "exchangeable")
-summary(mmr_gee)
-```
 
+# Adjusted GEE with AR1 
+mmr_adj_ar1 <- geeglm(mmr ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = mmr_samples, 
+                    id = stateID, 
+                    corstr = "ar1")
 
-# Best GEE for Overall 
+mmr_adj_ind <- geeglm(mmr ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = mmr_samples, 
+                    id = stateID, 
+                    corstr = "independence")
 
-```{r}
-overall_gee <- geeglm(mmr ~ per_capita + n_school + type, 
+anova(mmr_adj_ex, mmr_adj_ar1)
+anova(mmr_adj_ex, mmr_adj_ind)
+anova(mmr_adj_ar1, mmr_adj_ind)
+
+# QIC Measures of Fit 
+MuMIn::model.sel(mmr_adj_ex, mmr_adj_ar1, mmr_adj_ind, rank="QIC")
+
+# 3. Overall with unadjusted 
+# Exchangeable
+unadj_overall_ex <- geeglm(overall ~ per_capita, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "exchangeable")
+
+# AR1
+unadj_overall_ind <- geeglm(overall ~ per_capita, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "independence")
+
+# Fit the GEE model
+unadj_overall_ar1 <- geeglm(overall ~ per_capita, 
                     family = gaussian, 
                     data = overall_samples, 
                     id = stateID, 
                     corstr = "ar1")
-summary(overall_gee)
+
+anova(unadj_overall_ex, unadj_overall_ar1)
+anova(unadj_overall_ex, unadj_overall_ind)
+anova(unadj_overall_ar1, unadj_overall_ind)
+MuMIn::model.sel(unadj_overall_ex, unadj_overall_ind, 
+                 unadj_overall_ar1, rank="QIC")
+
+# 4. Overall with adjusted 
+# Exchangeable
+adj_overall_ex <- geeglm(overall ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "exchangeable")
+
+# Independence
+adj_overall_ind <- geeglm(overall ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "independence")
+
+# AR1
+adj_overall_ar1 <- geeglm(overall ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "ar1")
+
+anova(adj_overall_ex, adj_overall_ind)
+anova(adj_overall_ex, adj_overall_ar1)
+anova(adj_overall_ar1, adj_overall_ind)
+MuMIn::model.sel(adj_overall_ex, adj_overall_ind, adj_overall_ar1, rank="QIC")
 ```
+
