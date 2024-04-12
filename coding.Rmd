@@ -1,5 +1,5 @@
 ---
-title: "Jinyu's Draft"
+title: "Code for Full Statistical Analysis"
 output: 
   pdf_document:
     keep_tex: false
@@ -10,6 +10,7 @@ date: "2024-03-28"
 knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(kableExtra)
+library(geepack)
 ```
 
 ```{r}
@@ -70,11 +71,13 @@ data <- vac %>% mutate(type = case_when(type %in% c("BOCES", "Kindergarten", "No
 ### Check missings in vaccination rate 
 
 ```{r}
+# Summary table for missing vaccination rates by states 
 rate_na_df <- data %>% group_by(state) %>% 
   summarise(state_abb = unique(state_abbr), mmr_na = sum(is.na(mmr)), overall_na=sum(is.na(overall)), 
             total_na = mmr_na+overall_na, N = n()) %>% 
   arrange(total_na)
 
+# Produce a table for reporting the number of schools without rate reports
 rate_na_df %>% select(-state_abb) %>% 
   kable(booktabs = TRUE, escape = FALSE, 
         col.names = c("State", "MMR", "Overall", "Total", "Total No.Schools")) %>% 
@@ -84,6 +87,95 @@ rate_na_df %>% select(-state_abb) %>%
 no_overall <- rate_na_df %>% filter(overall_na==N) %>% pull(state_abb)
 no_mmr <- rate_na_df %>% filter(mmr_na==N) %>% pull(state_abb)
 ```
+
+```{r}
+# Reshape data for plotting
+total_na_long <- data %>% group_by(state_abbr) %>% 
+  mutate(has_NArate = ifelse(is.na(mmr)&is.na(overall), 1, 0)) %>% 
+  summarise(missingN = sum(has_NArate), N = n()) %>% 
+  arrange(missingN) %>% 
+  pivot_longer(cols = c(missingN, N), names_to = "Variable", values_to = "Value") %>%
+  mutate(Variable = factor(Variable, levels = c("missingN", "N"), labels = c("Total Missing", "Total Schools")))
+
+# Creating the grouped bar plot
+ggplot(total_na_long, aes(x = reorder(state_abbr, -Value), y = Value, fill = Variable)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("Total Missing" = "steelblue", "Total Schools" = "lightgray")) +
+  labs(title = "Comparison of Total Missing Data and Total Schools by State",
+       x = "State",
+       y = "Count") +
+  theme_minimal()+
+  theme(
+    axis.text.x = element_text(size = 14), # X axis labels
+    axis.text.y = element_text(size = 14), # Y axis labels
+    axis.title.x = element_text(size = 16), # X axis title
+    axis.title.y = element_text(size = 16), # Y axis title
+    plot.title = element_text(size = 20, face = "bold"), # Plot title
+    legend.title = element_text(size = 16), # Legend title
+    legend.text = element_text(size = 14), # Legend items
+    legend.position = "bottom"
+  )
+
+# ggsave("totalNA.png", width = 12, height = 9, dpi = 300)
+```
+
+
+```{r}
+# MMR rate
+mmrNA_long <- data %>% group_by(state_abbr) %>% 
+  summarise(N = n(), mmr_na = sum(is.na(mmr))) %>%
+  filter(mmr_na != 0) %>% 
+  arrange(mmr_na) %>% 
+  pivot_longer(cols = c(mmr_na, N), names_to = "Variable", values_to = "Value") %>%
+  mutate(Variable = factor(Variable, levels = c("mmr_na", "N"), 
+                           labels = c("MMR Missing", "Total Schools")))
+
+mmrNA_long %>% 
+  ggplot(aes(x = reorder(state_abbr, -Value), y = Value, fill = Variable)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("Total Schools" = "lightgray", "MMR Missing" = "steelblue")) +
+  labs(title = "Missing MMR Vaccination Rates by State",
+       x = "State",
+       y = "Total Number of Missing Values") +
+  theme_minimal() +theme(axis.text.x = element_text(size = 14), # X axis labels
+        axis.text.y = element_text(size = 14), # Y axis labels
+        axis.title.x = element_text(size = 16), # X axis title
+        axis.title.y = element_text(size = 16), # Y axis title
+        plot.title = element_text(size = 20, face = "bold"), 
+        legend.title = element_text(size = 16), # Legend title
+        legend.text = element_text(size = 14), # Legend items
+        legend.position = "bottom")
+ggsave("plots/MMR_NA.png", width = 10, height = 8, dpi = 300)
+
+
+# Overall rate
+overallNA_long <- data %>% group_by(state_abbr) %>% 
+  summarise(N = n(), overall_na = sum(is.na(overall))) %>%
+  filter(overall_na != 0) %>% 
+  arrange(overall_na) %>% 
+  pivot_longer(cols = c(overall_na, N), names_to = "Variable", values_to = "Value") %>%
+  mutate(Variable = factor(Variable, levels = c("overall_na", "N"), 
+                           labels = c("Missing in Overall", "Total Schools")))
+overallNA_long %>% 
+  ggplot(aes(x = reorder(state_abbr, -Value), y = Value, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("Total Schools" = "lightgray", 
+                               "Missing in Overall" = "steelblue")) +
+  labs(title = "Missing Overall Vaccination Rates by State",
+       x = "State",
+       y = "No.Missing in Overall Rate") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 14), # X axis labels
+        axis.text.y = element_text(size = 14), # Y axis labels
+        axis.title.x = element_text(size = 16), # X axis title
+        axis.title.y = element_text(size = 16), # Y axis title
+        plot.title = element_text(size = 20, face = "bold"), 
+        legend.title = element_text(size = 16), # Legend title
+        legend.text = element_text(size = 14), # Legend items
+        legend.position = "bottom") # Plot title
+ggsave("plots/overall_NA.png", width = 10, height = 8, dpi = 300)
+```
+
 
 
 ### Check Duplicates 
@@ -123,6 +215,41 @@ clean_data <- data %>%
   left_join(data %>% group_by(state) %>% summarise(n_school = n_distinct(name)), by = "state")
 ```
 
+\newpage
+
+Table 1 
+
+```{r}
+clean_data %>% 
+  group_by(state) %>% 
+  summarise(overall = n(), n_city = n_distinct(city), 
+            n_county = n_distinct(county), 
+            pop2016 = unique(schagepop2016), 
+            expenditure = unique(statespending2016), 
+            capita = unique(per_capita)) %>% 
+  kable(booktabs = TRUE, 
+        col.names = c("State", "N (Schools)", "N (City)", "N (County)", 
+                      "School-Aged\nPopulation (2016)", 
+                      "Expenditure (2016)", "Per Capita")) %>% 
+  kable_styling(latex_options = c("striped", "scale_down")) 
+```
+
+
+```{r}
+clean_data %>% 
+  group_by(state) %>% 
+  summarise(n_city = n_distinct(city), n_county = n_distinct(county), 
+            n_cityNA = sum(is.na(city)), n_countyNA = sum(is.na(county))) %>% 
+  mutate(has_both = ifelse(n_cityNA == 0 & n_countyNA == 0, 1, 0), 
+         only_city = ifelse(n_cityNA == 0 & n_countyNA !=0, 1, 0), 
+         only_county = ifelse(n_countyNA == 0 & n_cityNA !=0, 1, 0), 
+         none = ifelse(n_city == 1 & n_county == 1, 1, 0), 
+         other = ifelse(n_city > 1 & n_county > 1, 1, 0)) %>% 
+  summarise(N_both = sum(has_both), Ncityonly = sum(only_city), 
+            Ncountyonly = sum(only_county), N_none = sum(none), 
+            Nothers = sum(other))
+```
+
 
 ## Filter dataframes for MMR and Overall Vaccination Rate
 
@@ -142,7 +269,9 @@ overall_df <- clean_data %>% filter(state %in% overall_states)
 mmr_df <- clean_data %>% filter(state %in% mmr_states)
 ```
 
-## MMR data 
+## Stratified Sampling 
+
+### MMR 
 
 ```{r}
 n_states <- n_distinct(mmr_df$state)
@@ -162,7 +291,7 @@ state_weights <- mmr_dat %>%
 
 # Step 2: Sample schools within each state, proportional to state weights
 # Set a total sample size of N schools
-N <- 5000  # Total desired sample size
+N <- 3000  # Total desired sample size
 
 # Calculate the number of schools to sample from each state, based on weights
 state_weights <- state_weights %>%
@@ -216,7 +345,7 @@ state_weights <- overall_dat %>%
 
 # Step 2: Sample schools within each state, proportional to state weights
 # Set a total sample size of N schools
-N <- 1000  # Total desired sample size
+N <- 3000  # Total desired sample size
 
 # Calculate the number of schools to sample from each state, based on weights
 state_weights <- state_weights %>%
@@ -243,14 +372,58 @@ overall_samples <- overall_samples %>% group_by(state) %>%
 
 # EDA
 
+\newpage 
+State School number 
+```{r}
+clean_data %>% group_by(state) %>% select(state, n_school) %>% slice(1) %>% arrange(n_school) %>% 
+  kable(booktabs = TRUE, col.names = c("State", "Schools (N)"), 
+        caption = "The number of schools within each state.") %>% 
+  kable_styling(latex_options = c("striped", "scale_down")) 
+```
+
+\newpage 
+
+```{r}
+clean_data %>% group_by(type) %>% 
+  summarise(nSchools=n(), reached95 = sum(rate95)) %>% 
+  kable(booktabs = TRUE, 
+        col.names = c("School Type", "Total Schools (N = 28299)",
+                      "Rate Over 95% (N)")) %>% 
+  kable_styling(latex_options = c("striped", "scale_down")) 
+```
+
 ## Data Visualization
+
+```{r}
+mmr_df %>% group_by(state) %>% 
+  mutate(mean_rate = mean(mmr)) %>% 
+  ggplot(aes(x = per_capita, y = mean_rate))+
+  geom_point(shape = 1)+
+  scale_colour_hue(l=50)+
+  geom_smooth(method = lm)+
+  labs(x = "Per Capita (2016)", y = "State Level Average MMR Rate")
+
+overall_df %>% group_by(state) %>% 
+  mutate(mean_rate = mean(overall)) %>% 
+  ggplot(aes(x = per_capita, y = mean_rate))+
+  geom_point(shape = 1)+
+  scale_colour_hue(l=50)+
+  geom_smooth(method = lm)+
+  labs(x="Per Capita (2016)", y = "State Level Overall Rate")
+
+
+```
+
+
 
 ### Vaccination Rates by States 
 
 ```{r}
 rate_long <- clean_data %>% 
   select(state_abbr, mmr, overall) %>%
-  pivot_longer(cols = c(mmr, overall), names_to = "vaccine_type", values_to = "rate")
+  pivot_longer(cols = c(mmr, overall), 
+               names_to = "vaccine_type", values_to = "rate") %>% 
+  mutate(Vaccine = case_when(vaccine_type == "mmr" ~ "MMR", TRUE ~ "Overall"))
 
 rate_long %>% 
   filter(state_abbr %in% no_mmr) %>% 
@@ -270,12 +443,23 @@ rate_long %>%
 
 rate_long %>% 
   filter(!(state_abbr %in% c(no_mmr, no_overall))) %>% 
-  ggplot(aes(y= rate, x = state_abbr, color = vaccine_type)) +
-  geom_boxplot() +
-  labs(x = "State", y = "rate_long") +
-  scale_color_manual(values = c("overall" = "blue", "mmr" = "red")) + 
-  theme_minimal() +
-  theme(axis.text.y = element_text(angle = 0, hjust = 1))
+  mutate(Vaccine = factor(Vaccine)) %>% 
+  ggplot(aes(x = state_abbr, y = rate)) +
+  geom_boxplot(aes(fill = Vaccine)) +
+  labs(x = "State", y = "Rate", 
+       title = "Comparison of Vaccination Rate Distribution By Type") +
+  scale_fill_brewer(palette = 1)+
+  theme_minimal()+
+  theme(axis.text.x = element_text(size = 14), # X axis labels
+        axis.text.y = element_text(size = 14), # Y axis labels
+        axis.title.x = element_text(size = 16), # X axis title
+        axis.title.y = element_text(size = 16), # Y axis title
+        plot.title = element_text(size = 20, face = "bold"), 
+        legend.title = element_text(size = 16), # Legend title
+        legend.text = element_text(size = 14), # Legend items
+        legend.position = "bottom") # Plot title
+
+# ggsave("plots/vac_comp.png",  width = 10, height = 8, dpi = 300)
 ```
 
 
@@ -283,18 +467,24 @@ rate_long %>%
 
 ```{r}
 clean_data %>% 
-  ggplot(aes(x = state_abbr, y = schagepop2016)) +
+  ggplot(aes(x = reorder(state_abbr, -schagepop2016), y = schagepop2016)) +
   geom_point(size = 3, color = "red") + 
   geom_segment(aes(x = state_abbr, xend = state_abbr, y = 0, yend = schagepop2016)) +
-  labs(x = "State", "School-Aged Population")+
-  theme_minimal() 
+  labs(x = "State",y= "School-Aged Population in 2016")+
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 14), # X axis labels
+        axis.text.y = element_text(size = 14)) # Plot title
+# ggsave("plots/StateschAged.png",  width = 10, height = 8, dpi = 300)
 
 clean_data %>% 
-  ggplot(aes(x = state_abbr, y = per_capita)) +
+  ggplot(aes(x = reorder(state_abbr, -per_capita), y = per_capita)) +
   geom_point(size = 3, color = "red") + 
   geom_segment(aes(x = state_abbr, xend = state_abbr, y = 0, yend = per_capita)) +
-  labs(x = "State", y="Per Capita")
-  theme()
+  labs(x = "State", y="Per Capita")+
+  theme_minimal()+
+  theme(axis.text.x = element_text(size = 14), # X axis labels
+        axis.text.y = element_text(size = 14)) # Plot title
+# ggsave("plots/StateCapita.png",  width = 10, height = 8, dpi = 300)
 ```
 
 
@@ -407,13 +597,29 @@ mmr_df %>%
   arrange(year) %>% 
   kable(booktabs = TRUE, caption = "The summary of MMR vaccination rates", 
         col.names = c("State", "No.School", "Min", "Mean", "Median", "Max", "No.Missing", "School Year")) %>% 
-  kable_styling(latex_options = c("striped", "scale_down")) %>% 
-  landscape()
+  kable_styling(latex_options = c("striped", "scale_down")) 
 ```
 
 
 
 ## EDA for Overall Data 
+
+```{r}
+overall_df %>% 
+  group_by(state) %>% 
+  summarise(n_school = n_distinct(name),
+            min_overall = min(overall, na.rm=TRUE),
+            mean_overall = mean(overall, na.rm=TRUE), 
+            median_overall = median(overall, na.rm=TRUE), 
+            max_overall = max(overall, na.rm=TRUE), 
+            overall_na = sum(is.na(overall)), 
+            year = unique(year)) %>% 
+  arrange(year) %>% 
+  kable(booktabs = TRUE, caption = "The summary of Overall vaccination rates", 
+        col.names = c("State", "No.School", "Min", "Mean", "Median", "Max", "No.Missing", "School Year")) %>% 
+  kable_styling(latex_options = c("striped", "scale_down")) 
+```
+
 
 
 # Statistical Analysis 
@@ -431,6 +637,8 @@ where Capita$_i$ was calculated by dividing the state spending by school aged po
 
 
 ### Generalized Least Squares 
+
+Failed 
 
 ```{r, eval=FALSE}
 library(nlme)
@@ -462,12 +670,8 @@ mmr_expo <- gls(mmr ~ per_capita+n_school+year,
                  weights = varIdent(form = ~ 1|schoolID), 
                  data = mmr_samples)
 getVarCov(mmr_expo)
-```
-
 
 #### Model comparison
-
-```{r, eval=FALSE}
 outAIC <- function(x){
   sumx <- summary(x)
   out <- c(sumx$AIC, sumx$BIC)
@@ -486,43 +690,234 @@ allaic
 ```
 
 
-### GEE 
+### Unadjusted GEE 
+
+$$
+\begin{aligned}
+\text{MMR}_{ij} &= \beta_0 +\beta_1 \cdot \text{PCS}_{ij} + \beta_2 \cdot \text{NSch}_{ij}+\beta_3 \cdot \text{Type}_{ij} + \epsilon_{ij}\\
+\text{OVR}_{ij} &= \beta_0 +\beta_1 \cdot \text{PCS}_{ij} + \beta_2 \cdot \text{NSch}_{ij}+\beta_3 \cdot \text{Type}_{ij} + \epsilon_{ij}
+\end{aligned}
+$$
+
+$$
+\begin{bmatrix}
+1 & 0 & 0 &\cdots &0\\
+0 & 1 & 0 &\cdots &0\\
+0 & 0 & 1 &\cdots &0\\
+\vdots & \vdots &\vdots &\ddots & \vdots\\
+0 & 0 & 0 &\cdots &1
+\end{bmatrix}
+$$
 
 ```{r}
-library(geepack)
+# GEE with Exchangeable Structure
+mmr_ex <- geeglm(mmr ~ per_capita, family = gaussian, 
+                  data = mmr_samples, id = stateID, 
+                  corstr = "exchangeable")
 
-mmr_samples$year <- as.factor(mmr_samples$year)
+# GEE with AR1 Structure
+mmr_ar1 <- geeglm(mmr ~ per_capita, family = gaussian, 
+                  data = mmr_samples, id = stateID, 
+                  corstr = "ar1")
 
-# Fit the GEE model
-gee_model <- geeglm(mmr ~ per_capita + n_school + year, 
+# GEE with Independent Structure
+mmr_ind <- geeglm(mmr ~ per_capita, family = gaussian, 
+                  data = mmr_samples, id = stateID, 
+                  corstr = "independence")
+
+# Model comparison 
+anova(mmr_ex, mmr_ar1)
+anova(mmr_ex, mmr_ind)
+anova(mmr_ind, mmr_ar1)
+
+# QIC Measures of Fit 
+MuMIn::model.sel(mmr_ex, mmr_ar1, mmr_ind, rank="QIC")
+```
+
+1. ANOVA suggests that the three unadjusted models are all identical. 
+
+2. Exchangeable Structure has the lowest QIC. 
+
+
+**Statistical Metrics:**
+
+* qLike: Quasi-likelihood of the model, a measure of the model fit to the data. Higher values (closer to zero, since these are likely negative) generally indicate a better fit.  
+* QIC: Quasi Information Criterion, a measure used for model selection. Lower QIC values indicate a better model fit considering both the goodness of fit and the complexity of the model.  
+* Delta: This column shows the difference in QIC from the best model to the current model. A delta of 0 indicates the best model.  
+* Weight: These are the Akaike weights based on the QIC values, providing a measure of each model's relative likelihood of being the best model among the set of models evaluated. A higher weight suggests a higher likelihood that this model is the best among those tested. 
+
+### Adjusted GEE 
+
+```{r}
+# Adjusted GEE with exchangeable 
+mmr_adj_ex <- geeglm(mmr ~ per_capita + n_school + type, 
                     family = gaussian, 
                     data = mmr_samples, 
                     id = stateID, 
                     corstr = "exchangeable")
 
-# Summary of the model
-summary(gee_model)
-
-
-# Fit the GEE model
-gee_model <- geeglm(mmr ~ per_capita + n_school + type, 
+# Adjusted GEE with AR1 
+mmr_adj_ar1 <- geeglm(mmr ~ per_capita + n_school + type, 
                     family = gaussian, 
                     data = mmr_samples, 
                     id = stateID, 
-                    corstr = "exchangeable")
+                    corstr = "ar1")
 
-# Summary of the model
-summary(gee_model)
+mmr_adj_ind <- geeglm(mmr ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = mmr_samples, 
+                    id = stateID, 
+                    corstr = "independence")
+
+anova(mmr_adj_ex, mmr_adj_ar1)
+anova(mmr_adj_ex, mmr_adj_ind)
+anova(mmr_adj_ar1, mmr_adj_ind)
+
+# QIC Measures of Fit 
+MuMIn::model.sel(mmr_adj_ex, mmr_adj_ar1, mmr_adj_ind, rank="QIC")
 ```
 
 
+```{r}
+data.frame(
+  struc = c("Exchangeable", "AR1", "Independence"), 
+  QIC = c(3007.5, 3015.7, 3015.8, 
+          3027.8, 3046.3, 3046.6), 
+  delta = c(0.00, 8.25, 8.26, 
+            0.00, 18.54, 18.86), 
+  weight = c(0.969, 0.016, 0.016, 
+             1, 0, 0)) %>% 
+  kable(booktabs = TRUE, 
+        col.names = c("Structure", "QIC", "Delta", "Weight"),
+        caption = "Model Selection Result for MMR Rate") %>% 
+  kable_styling(latex_options = c("striped", "scale_down")) %>% 
+  pack_rows("Unadjusted", 1, 3) %>% 
+  pack_rows("Adjusted", 4, 6)
+```
+
+```{r}
+anova(mmr_ex, mmr_adj_ex)
+```
+
+```{r}
+summary(mmr_adj_ex)
+```
 
 
+## Overall Unadjusted 
+
+```{r}
+# Exchangeable
+unadj_overall_ex <- geeglm(overall ~ per_capita, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "exchangeable")
+
+# AR1
+unadj_overall_ind <- geeglm(overall ~ per_capita, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "independence")
+
+# Fit the GEE model
+unadj_overall_ar1 <- geeglm(overall ~ per_capita, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "ar1")
+
+anova(unadj_overall_ex, unadj_overall_ar1)
+anova(unadj_overall_ex, unadj_overall_ind)
+anova(unadj_overall_ar1, unadj_overall_ind)
+```
+```{r}
+# QIC Measures of Fit 
+# Take long time to run 
+# MuMIn::model.sel(unadj_overall_ex, unadj_overall_ind, unadj_overall_ar1, rank="QIC")
+```
+
+```{r}
+data.frame(
+  struc = c("Exchangeable", "Independence", "AR1"), 
+  QIC = c(2934.4, 3012.3, 3012.3), 
+  delta = c(0.00, 77.92, 77.94), 
+  weight = c(1, 0, 0)) %>% 
+  kable(booktabs = TRUE, 
+        col.names = c("Structure", "QIC", "Delta", "Weight"),
+        caption = "Unadjusted Model Selection Result for Overall Rate") %>% 
+  kable_styling(latex_options = c("striped", "scale_down")) 
+```
+
+```{r}
+# Exchangeable
+adj_overall_ex <- geeglm(overall ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "exchangeable")
+
+# Independence
+adj_overall_ind <- geeglm(overall ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "independence")
+
+# AR1
+adj_overall_ar1 <- geeglm(overall ~ per_capita + n_school + type, 
+                    family = gaussian, 
+                    data = overall_samples, 
+                    id = stateID, 
+                    corstr = "ar1")
+
+anova(adj_overall_ex, adj_overall_ind)
+anova(adj_overall_ex, adj_overall_ar1)
+anova(adj_overall_ar1, adj_overall_ind)
+```
+
+```{r}
+# QIC Measures of Fit 
+MuMIn::model.sel(adj_overall_ex, adj_overall_ind, adj_overall_ar1, rank="QIC")
+```
 
 
+```{r}
+data.frame(
+  struc = c("AR1", "Independence", "Exchangeable"), 
+  QIC = c(3062.3, 3062.4, 3065.7), 
+  delta = c(0.00, 0.05, 3.34), 
+  weight = c(0.462, 0.451, 0.087)) %>% 
+  kable(booktabs = TRUE, 
+        col.names = c("Structure", "QIC", "Delta", "Weight"),
+        caption = "Adjusted Model Selection Result for Overall Rate") %>% 
+  kable_styling(latex_options = c("striped", "scale_down"))
+```
 
 
+```{r}
+anova(unadj_overall_ex, adj_overall_ar1)
+```
 
+```{r}
+summary(adj_overall_ar1)$coefficients
+```
+
+
+```{r}
+data.frame(
+  ` ` = c("Intercept", "Per Capita", "Number of Schools", 
+          "Private", "Public", "Unknown"), 
+  Estimate = c(79.06, 0.000813, 0.00128, -4.11, -2.04, -2.96), 
+  Std.err = c(4.364, 0.000496, 0.000106, 1.324, 1.260, 3.955),
+  Wald = c(328.197, 2.688, 145.729, 9.642, 2.611, 0.559), 
+  `P-value` = c("< 0.05", "0.101", "<0.05", "<0.05", "0.106", "0.454"))%>% 
+  kable(booktabs = TRUE, 
+        caption = "Best Model Estimation Result for MMR Vaccination Rate") %>% 
+  kable_styling(latex_options = c("striped", "scale_down")) %>% 
+  pack_rows("School Type", 4, 6) 
+```
 
 
 
